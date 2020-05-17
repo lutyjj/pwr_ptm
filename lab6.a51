@@ -43,13 +43,16 @@ test_string:
 ;           R2 - dlugosc tablicy
 ;---------------------------------------------------------------------
 fill_iram:
-	MOV	A, #0			; licznik
+	CLR	A		; licznik
+	CJNE	R2, #0,	loop_f_iram
+	SJMP	exit_f_iram
 loop_f_iram:
 	INC	A
 	MOV	@R0, A
 	INC	R0
-	DJNZ	R2, loop_f_iram	
-	ret
+	DJNZ	R2, loop_f_iram
+exit_f_iram:
+	RET
 
 ;---------------------------------------------------------------------
 ; Wypelnianie tablicy ciagiem liczbowym 1,2,3, ... (XRAM)
@@ -57,27 +60,25 @@ loop_f_iram:
 ;           R3|R2 - dlugosc tablicy
 ;---------------------------------------------------------------------
 fill_xram:
-	MOV	A, #0			; licznik
-	DEC	R2
+	MOV	R4, #0			; licznik <- bylo A nie R5
 loop_f_xram:
-	INC	A
+	MOV 	A, R2			; sprawdzenie czy licznik nie jest zerowy
+	ORL 	A, R3
+	JZ 	exit_f_xram
+
+	INC	R4
+	MOV	A, R4
 	MOVX	@DPTR, A		; przenosimy licznik do DPTR
 	INC	DPTR
 	
+	MOV 	A, R2
 	DEC	R2			; zmniejszamy dlugosc tablicy (Low)
-	CJNE	R2, #0FFh, loop_f_xram	; sprawdzamy czy byla ona zerowa
+	JNZ 	loop_f_xram
+	DEC 	R3			; zmniejszamy dlugosc tablicy ((High)
 	
-	PUSH	ACC
-	MOV	A, R2			
-	INC	A
-	ORL	A, R3			; sprawdzenie czy dlogosc tablicy sie wyzerowala
-	JZ	exit
-	DEC	R3			; zmniejszamy dlugosc tablicy ((High)
-	POP	ACC
 	SJMP	loop_f_xram
-exit:
-	POP	ACC
-	ret
+exit_f_xram:
+	RET
 
 ;---------------------------------------------------------------------
 ; Odwracanie tablicy w pamieci wewnetrznej (IRAM)
@@ -90,7 +91,9 @@ reverse_iram:
 	DEC	A
 	MOV	R1, A
 	MOV	A, R2			; dzielimy dlugosc przez 2
+	CLR	C
 	RRC	A
+	JZ	exit_r_iram
 	MOV	R2, A			; korzystamy z R2 jak z licznika
 loop_r_iram:
 	MOV	A, @R0
@@ -99,7 +102,8 @@ loop_r_iram:
 	INC	R0			; przechodzimy do nastepnej komorki
 	DEC	R1			; przechodzimy do poprzedniej komorki
 	DJNZ	R2, loop_r_iram
-	ret
+exit_r_iram:
+	RET
 
 ;---------------------------------------------------------------------
 ; Odwracanie tablicy w pamieci zewnetrznej (XRAM)
@@ -107,54 +111,67 @@ loop_r_iram:
 ;           R3|R2 - dlugosc tablicy
 ;---------------------------------------------------------------------
 reverse_xram:
-	MOV	A, DPH
-	ADD	A, R3			; obliczamy adres koncowy XRAM (High)
-	MOV	R1, A		
-	
 	MOV	A, DPL
 	ADD	A, R2			; obliczamy adres koncowy XRAM (Low)
-	DEC	A
 	MOV	R0, A
+
+	MOV	A, DPH
+	ADDC	A, R3			; obliczamy adres koncowy XRAM (High)
+	MOV	R1, A		
 	
+	MOV	A, R0			; sprawdzenie czy nie mamy zwiekszyc High
+	DEC	R0
+	JNZ	skip_dec
+	DEC	R1
+	
+skip_dec:
 	MOV	A, R3			; dzielenie przez 2 dlugosci tablicy
 	RRC	A
 	MOV	R3, A
 	MOV	A, R2
 	RRC	A
 	MOV	R2, A		
-	
+
 loop_r_xram:
+	MOV 	A, R2			; sprawdzenie czy licznik nie jest zerowy
+	ORL 	A, R3
+	JZ 	exit_r_xram
+
 	MOVX	A, @DPTR
 	MOV	R4, A			; pobieramy zawartosc DPTR z przodu
 	LCALL	dptr_conv		; przenosimy DPTR na adres koncowy R1|R0
 	MOVX	A, @DPTR	
 	MOV	R5, A			; pobieramy zawartosc DPTR z konca
+		
 	MOV	A, R4
 	MOVX	@DPTR, A		; zapisujemy do konca zawartosc z przodu
 	LCALL	dptr_conv		; przenosimy DPTR na adres poczatkowy
 	MOV	A, R5
 	MOVX	@DPTR, A		; zapisujemy do poczatku zawartosc z konca
 	INC	DPTR			; przechodzimy do nastepnej komorki
+
+	MOV	A, R0			; sprawdzamy czy R0 wyzerowal sie
 	DEC	R0			; zmniejszamy adres koncowy DPTR/R0 (Low)
-	
-	DEC	R2			; zmniejszamy licznik powtorzen (Low)
-	CJNE	R2, #0FFh, loop_r_xram
-	
-	PUSH	ACC
-	MOV	A, R2		
-	INC	A
-	ORL	A, R3			; sprawdzamy czy licznik sie nie wyzerowal
-	JZ	exit_xram		; jesli tak, konczymy
-	POP	ACC
-	
-	DEC	R3			; jesli nie, zmniejszamy licznik powtorzen (High)
+	JNZ	dec_only_low	
 	DEC	R1			; zmniejszamy adres koncowy DPTR/R1 (High)
 	
+dec_only_low:
+	MOV	A, R2
+	DEC 	R2			; zmniejszamy licznik powtorzen (Low)
+	JNZ 	loop_r_xram
+	DEC	R3			; jesli nie, zmniejszamy licznik powtorzen (High)
 	SJMP	loop_r_xram
-exit_xram:
-	POP	ACC
-	ret
+	
+exit_r_xram:
+	RET
 
+;---------------------------------------------------------------------
+; Zamiana DPH|DPL z R1|R0 miejscami.
+; Wejscie:  DPTR  - adres poczatkowy tablicy
+;           R1|R0 - potrzebny adres DPTR
+; Wyjscie:  R1|R0 - poprzedni ares DPTR
+;	    DPTR  - nowy adres, skonstruowany z R1|R0
+;---------------------------------------------------------------------
 dptr_conv:
 	PUSH 	ACC
 	MOV 	A, DPL
@@ -172,15 +189,15 @@ dptr_conv:
 ;           R0   - adres poczatkowy stringu (IRAM)
 ;---------------------------------------------------------------------
 copy_string:
+	CLR	A
 	MOVC 	A, @A+DPTR		; pobieramy char z DPTR
 	MOV	@R0, A			; przenosimy char do komorki R0
 	JZ	end_cpy			; jesli char jest zerowy, konczymy
 	INC	R0			; przechodzimy do nastepnej komorki R0
 	INC	DPTR			; przechodzimy do nastepnej komorki DPTR
-	CLR	A
 	SJMP	copy_string
 end_cpy:
-	ret
+	RET
 
 ;---------------------------------------------------------------------
 ; Odwracanie stringu w pamieci IRAM
@@ -189,6 +206,7 @@ end_cpy:
 reverse_string:
 	MOV	R2, #0			; licznik dlugosci tablicy
 	MOV	A, R0			; nie mozemy zmieniac oryginalnego adresu
+	MOV	R1, A
 loop_r_string:
 	CJNE	@R1, #0, not_end	; sprawdzamy czy string sie skonzyl
 	SJMP	start_reverse
@@ -198,7 +216,7 @@ not_end:				; jesli nie, przechodzimy do nastepnej komorki
 	SJMP	loop_r_string
 start_reverse:
 	LCALL	reverse_iram
-	ret
+	RET
 
 ;---------------------------------------------------------------------
 ; Zliczanie liter w stringu umieszczonym w pamieci IRAM
@@ -206,28 +224,31 @@ start_reverse:
 ; Wyjscie:  A  - liczba liter w stringu
 ;---------------------------------------------------------------------
 count_letters:
-	MOV	A, #0
+	CLR	A
+counter_loop:
+	CJNE	@R0, #0, start_counter
+	SJMP	exit_count
 start_counter:
 	CJNE	@R0, #'A', big_A
 big_A:
-	JC	exit_count
-	CJNE	@R0, #'Z', big_Z
+	JC	inc_string
+	CJNE	@R0, #'Z'+1, big_Z
 big_Z:
 	JC	inc_counter
 	CJNE	@R0, #'a', small_a
 small_a:
-	JC	exit_count
-	CJNE	@R0, #'z', small_z
+	JC	inc_string
+	CJNE	@R0, #'z'+1, small_z
 small_z:
-	JNC	exit_count
+	JNC	inc_string
 inc_counter:
 	INC	A
-	
-exit_count:
+inc_string:
 	INC	R0
-	CJNE	@R0, #0, start_counter
-	ret
+	SJMP	counter_loop
+exit_count:
+	RET
 	
-text:	DB	'Hello world 0123456789', 0
+text:	DB	'', 0
 
 END
