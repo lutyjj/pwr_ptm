@@ -17,6 +17,7 @@ ORG 0
 ;           R0   - adres poczatkowy (IRAM)
 ;---------------------------------------------------------------------
 copy_data:
+	CLR	A
 	MOVC	A, @A+DPTR		; pobieramy dlugosc tablicy
 	JZ	copy_exit
 	MOV	R2, A
