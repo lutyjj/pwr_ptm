@@ -69,9 +69,8 @@ sort_exit:
 	ret
 
 ;---------------------------------------------------------------------
-; Zamiana elementow miejscami
-; Wejscie:  R0 - adres pierwszego elementu
-;           R1 - adres drugiego elementu
+; Zamiana elementu miejscami z nastepnym
+; Wejscie:  R0 - adres elementu
 ;---------------------------------------------------------------------
 swap_elems:
 	MOV	A, @R0			; pobieramy wartosc komorki
