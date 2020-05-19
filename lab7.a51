@@ -18,14 +18,16 @@ ORG 0
 ;---------------------------------------------------------------------
 copy_data:
 	MOVC	A, @A+DPTR		; pobieramy dlugosc tablicy
+	JZ	copy_exit
 	MOV	R2, A
-loop:
+copy_loop:
 	INC	DPTR			; przechodzimy do nastepnej komorki xram
 	CLR	A
 	MOVC	A, @A+DPTR		; pobieramy wartosc komorki
 	MOV	@R0, A			; przenosimy do iram
 	INC	R0			; przechodzimy do nastepnej komorki iram
-	DJNZ	R2, loop		; powtarzamy poki dlugosc nie jest zerowa
+	DJNZ	R2, copy_loop		; powtarzamy poki dlugosc nie jest zerowa
+copy_exit:
 	ret
 
 ;---------------------------------------------------------------------
@@ -34,36 +36,36 @@ loop:
 ;           R2 - dlugosc tablicy
 ;---------------------------------------------------------------------
 bubble_sort_iram:
-	CJNE	R2, #2, start_sorting	; sortujemy jesli dlugosc wieksza niz 1
-start_sorting:
-	JC	exit
+	CJNE	R2, #2, sort_start	; sortujemy jesli dlugosc wieksza niz 1
+sort_start:
+	JC	sort_exit
 	MOV	A, R0
 	MOV	R1, A			; w R1 trzymamy adres poczatkowy
 	DEC	R2			; mamy przejsc przez tablice n-1 razy
 	MOV	A, R2
 	MOV	R3, A			; w R3 trzymamy	licznik petli wewnetrznej
-	MOV	R4, A			; w R4 trzymamy licznik petli zewnetrznej
-	SETB	F0			; F0 sluzy jako flaga, ze zamienialismy element
+	MOV	R4, A			; w R4 trzymamy licznik petli zewnetrznej		
 outer_loop:
-	JNB	F0, exit		; jesli nie zamienialismy element, mozemy konczyc
 	MOV	A, R1			; pobieramy adres poczatkowy tablicy
 	MOV	R0, A
 	MOV	A, R2			; resetujemy licznik petli wewnetrznej
 	MOV	R3, A
-	CLR	F0
+	CLR	F0			; F0 sluzy jako flaga, ze zamienialismy element
 inner_loop:
-	CLR	C
 	INC	R0			
 	MOV	A, @R0			; pobieramy zawartosc nastepnej komorki
 	DEC	R0
+	CLR	C
 	SUBB	A, @R0			; jesli nastepna komorka jest wieksza, zamieniamy miejscami
 	JNC	skip_swap
 	LCALL	swap_elems
+	SETB	F0			; ustawiamy flage zamiany elementow
 skip_swap:
 	INC	R0			; przechodzimy do nastepnej komorki
 	DJNZ	R3, inner_loop
+	JNB	F0, sort_exit		; jesli nie zamienialismy element, mozemy konczyc
 	DJNZ	R4, outer_loop
-exit:
+sort_exit:
 	ret
 
 ;---------------------------------------------------------------------
@@ -72,18 +74,15 @@ exit:
 ;           R1 - adres drugiego elementu
 ;---------------------------------------------------------------------
 swap_elems:
-	PUSH	ACC
 	MOV	A, @R0			; pobieramy wartosc komorki
 	INC	R0			; przechodzimy do nastepnej komorki
 	XCH	A, @R0
 	DEC	R0			; przechodzimy do poprzedniej komorki
 	XCH	A, @R0
-	SETB	F0			; ustawiamy flage zamiany elementow
-	POP	ACC
 	ret
 
 test_data:
-	DB	9
+	DB	0
 	DB	6, 5, 3, 7, 4, 2, 0, 1, 9
 
 END
